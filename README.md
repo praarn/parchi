@@ -8,20 +8,19 @@ summary, an eligibility checklist, key deadlines, an "explain it like I'm 10"
 version — in your language — and a chatbot that answers questions using
 *only* what's actually in the document, not guesses.
 
-Built as a real multi-service architecture, not a toy: separate frontend,
-API gateway, AI service, job queue, and vector search — because that's what
-it takes to process documents asynchronously without blocking anyone.
-
 ---
 
 ## 🏗️ How it's wired together
-Next.js (web)
-│
-▼
-Express API (node-api) ──── BullMQ + Redis (job queue)
-│                            │
-▼                            ▼
-Postgres + pgvector      FastAPI (ai-service) ──── Groq API
+
+```
+   Next.js (web)
+        │
+        ▼
+  Express API (node-api) ──── BullMQ + Redis (job queue)
+        │                            │
+        ▼                            ▼
+   Postgres + pgvector      FastAPI (ai-service) ──── Groq API
+```
 
 | Piece | What it does |
 |---|---|
@@ -30,145 +29,276 @@ Postgres + pgvector      FastAPI (ai-service) ──── Groq API
 | **`fastapi-service/`** | The actual AI work: PDF/OCR extraction, chunking, embeddings (pgvector), the summarize/eligibility/ELI10 call, translation, RAG Q&A |
 | **`database/schema.sql`** | Applied automatically to Postgres on first boot |
 
-Everything talks over plain HTTP internally, guarded by a shared internal
-token — no service trusts another blindly.
+For a deep dive into *why* each tool was chosen, see `PROJECT_DEEP_DIVE.md`.
 
 ---
 
-## ⚡ Get it running
+## ✅ Requirements (all OSes)
 
-### 1. Get a free Groq API key
-This app runs entirely on **Groq's free tier** — no card, no billing, no
-waiting on trial credits.
-→ https://console.groq.com/keys — sign in, create a key, copy it.
+- **Docker Desktop** (or Docker Engine + Compose on Linux)
+- **Node.js 20+**
+- **Python 3.11 or 3.12** — not 3.14; some packages (`pymupdf`) don't have
+  prebuilt wheels for it yet and will fail to install
+- A **free Groq API key** → https://console.groq.com/keys (no card required)
 
-### 2. Set up your environment files
+---
+
+## ⚡ Option A — Docker only (same commands on every OS)
+
+This is the fastest path and the only section that's genuinely identical
+across Windows, macOS, and Linux, since Docker abstracts the OS away.
 
 ```bash
+git clone https://github.com/praarn/bureaucracySimplifier.git
+cd bureaucracySimplifier
+
 cp fastapi-service/.env.example fastapi-service/.env
 cp node-api/.env.example node-api/.env
 ```
 
-Fill in `fastapi-service/.env`:
-GROQ_API_KEY=gsk_your_real_key_here
-INTERNAL_SERVICE_TOKEN=<generate below>
-DATABASE_URL=postgresql://bureaucracy:bureaucracy@localhost:5432/bureaucracy
-
-Generate a proper random token (don't hand-type one):
-```bash
-python -c "import secrets; print(secrets.token_hex(32))"
-```
-Paste the same value into **both** `fastapi-service/.env` and
-`node-api/.env` — these two services check that they match on every
-internal call. Also set a separate `JWT_SECRET` in `node-api/.env`.
-
-> ⚠️ **Windows PowerShell users:** if you write `.env` files with
-> `Set-Content -Encoding utf8`, PowerShell silently adds a BOM (byte-order
-> mark) that breaks env parsing in subtle, confusing ways. Use
-> `-Encoding ascii` instead, or edit the file directly in VS Code.
-
-### 3. Run it — Docker (easiest)
+Edit both `.env` files (see **Step 2** under Option B below for exactly
+what to fill in), then:
 
 ```bash
 docker compose up --build
 ```
 
 → **http://localhost:3000**
-(Node API health: `:4000/health` · AI service health: `:8000/health`)
 
-### 4. Run it — locally, no Docker
+---
 
-You'll still want Postgres + Redis in Docker:
+## ⚡ Option B — Running each service natively (recommended while developing)
+
+Commands are grouped by OS starting at **Step 3**, since setup (Steps 1–2)
+is identical everywhere.
+
+### Step 1 — Clone and enter the project (all OSes)
+
+```bash
+git clone https://github.com/praarn/bureaucracySimplifier.git
+cd bureaucracySimplifier
+```
+
+### Step 2 — Create and fill in environment files (all OSes)
+
+```bash
+cp fastapi-service/.env.example fastapi-service/.env
+cp node-api/.env.example node-api/.env
+```
+
+Generate a random internal token — **use the same value in both files**:
+
+**Windows (PowerShell):**
+```powershell
+python -c "import secrets; print(secrets.token_hex(32))"
+```
+
+**macOS / Linux:**
+```bash
+openssl rand -hex 32
+```
+
+Open `fastapi-service/.env` and fill in:
+```
+GROQ_API_KEY=gsk_your_real_key_here
+INTERNAL_SERVICE_TOKEN=<paste the generated token>
+DATABASE_URL=postgresql://bureaucracy:bureaucracy@localhost:5432/bureaucracy
+EMBEDDING_PROVIDER=local
+```
+
+Open `node-api/.env` and fill in (same `INTERNAL_SERVICE_TOKEN` value):
+```
+DATABASE_URL=postgresql://bureaucracy:bureaucracy@localhost:5432/bureaucracy
+REDIS_URL=redis://localhost:6379
+AI_SERVICE_URL=http://localhost:8000
+INTERNAL_SERVICE_TOKEN=<same token as above>
+JWT_SECRET=<another random string, same method as above>
+UPLOAD_DIR=./uploads
+PORT=4000
+```
+
+> ⚠️ **Windows PowerShell users only:** if you write these files using
+> `Set-Content -Encoding utf8`, PowerShell silently adds a BOM that breaks
+> env parsing. If you script the file creation instead of pasting in an
+> editor, use `-Encoding ascii` instead.
+
+---
+
+### Step 3 — Start Postgres + Redis (all OSes, identical)
+
+Open **Terminal 1** and leave it running:
 ```bash
 docker compose up postgres redis
 ```
+Wait ~10 seconds for it to fully initialize before continuing.
 
-**AI service:**
-```bash
+---
+
+### Step 4 — Start the AI service
+
+Open **Terminal 2**.
+
+**Windows (PowerShell):**
+```powershell
 cd fastapi-service
 python -m venv .venv
-source .venv/bin/activate      # Windows: .venv\Scripts\activate
+.venv\Scripts\activate
 pip install -r requirements.txt
 uvicorn app.main:app --port 8000
 ```
 
-**Node API + worker** (two separate terminals — the worker is what
-actually processes documents, nothing happens without it running):
+**macOS / Linux:**
+```bash
+cd fastapi-service
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000
+```
+
+Confirm it's up: open `http://localhost:8000/health` — should show
+`{"status":"ok"}`.
+
+> **Optional — enable OCR for scanned PDFs.** Without this, scanned/
+> image-only documents will extract as empty text.
+> - **Windows:** install [Tesseract](https://github.com/UB-Mannheim/tesseract-ocr-w64-setup) (check the Hindi language pack during install) and [Poppler](https://github.com/oschwartz10612/poppler-windows/releases/latest), then add both installation `bin` folders to your PATH and fully restart your terminal.
+> - **macOS:** `brew install tesseract tesseract-lang poppler`
+> - **Linux (Debian/Ubuntu):** `sudo apt install tesseract-ocr tesseract-ocr-hin poppler-utils`
+>
+> Verify with `tesseract --version` and `pdftoppm -v` on any OS.
+
+---
+
+### Step 5 — Start the Node API
+
+Open **Terminal 3** (same commands on every OS):
 ```bash
 cd node-api
 npm install
-npm run dev       # terminal 1 — the HTTP API
-npm run worker    # terminal 2 — the processing worker
+npm run dev
 ```
 
-**Frontend:**
+Confirm: `http://localhost:4000/health`.
+
+---
+
+### Step 6 — Start the background worker
+
+Open **Terminal 4** — **this must be running before you upload anything**,
+or documents will sit stuck at "processing" forever (same commands on
+every OS):
+```bash
+cd node-api
+npm run worker
+```
+
+You should see:
+```
+[worker] listening for document-processing jobs
+```
+
+---
+
+### Step 7 — Start the frontend
+
+Open **Terminal 5** (same commands on every OS):
 ```bash
 cd web
 npm install
 npm run dev
 ```
 
-### 5. Enable OCR (optional, but recommended)
+→ **http://localhost:3000**
 
-Plenty of real-world government documents are scanned images, not
-selectable text. Without OCR tooling, those come back with an empty
-summary. To support them, install two system tools and put them on PATH:
+---
 
-- **Tesseract**: https://github.com/UB-Mannheim/tesseract-ocr-w64-setup — during install, add the **Hindi** language pack too
-- **Poppler**: https://github.com/oschwartz10612/poppler-windows/releases/latest
+## 🔁 Every time you come back to work on it (after the first setup)
 
-Verify both are visible after a full terminal/editor restart:
+You don't need to repeat `npm install` / `pip install` again unless
+`package.json` or `requirements.txt` changed. Just re-run the five start
+commands in order, one per terminal:
+
 ```bash
-tesseract --version
-pdftoppm -v
+# Terminal 1
+docker compose up postgres redis
+
+# Terminal 2 — Windows
+cd fastapi-service && .venv\Scripts\activate && uvicorn app.main:app --port 8000
+# Terminal 2 — macOS/Linux
+cd fastapi-service && source .venv/bin/activate && uvicorn app.main:app --reload --port 8000
+
+# Terminal 3
+cd node-api && npm run dev
+
+# Terminal 4
+cd node-api && npm run worker
+
+# Terminal 5
+cd web && npm run dev
 ```
-If either command isn't found, extraction silently falls back to
-native-text-only — the app won't crash, but scanned PDFs will summarize
-as empty.
+
+---
+
+## 🧹 Resetting stuck/broken documents
+
+If a document gets stuck at `processing` (e.g. the worker wasn't running
+when it was uploaded), clear it out — same command on every OS since it
+runs inside the Docker container regardless of host OS:
+
+```bash
+docker exec -it bureaucracysimplifier-postgres-1 psql -U bureaucracy -d bureaucracy -c "DELETE FROM documents;"
+```
+
+---
+
+## 🛑 Shutting everything down
+
+Ctrl+C in Terminals 2–5, then in Terminal 1:
+```bash
+docker compose down
+```
+Add `-v` to also wipe the database (`docker compose down -v`) if you want
+a completely clean slate next time.
 
 ---
 
 ## 🔁 What happens when you upload a document
 
 1. Sign up / log in → JWT issued.
-2. Upload a PDF → saved to disk, deduplicated by SHA-256 hash (upload the
-   same file twice, get the same result instantly, no reprocessing).
+2. Upload a PDF → saved to disk, deduplicated by SHA-256 hash.
 3. `POST /documents/:id/process` → job dropped onto the BullMQ queue.
-4. The worker calls the AI service's `/internal/process`:
-   extract (+ OCR fallback) → one batched LLM call for
-   summary/eligibility/deadlines/ELI10 → chunk + embed into `pgvector`.
+4. The worker calls the AI service: extract (+ OCR fallback) → one
+   batched LLM call for summary/eligibility/deadlines/ELI10 → chunk +
+   embed into `pgvector`.
 5. Frontend polls until `status = ready`.
-6. Switching language hits `/documents/:id/translate` — cached per
-   `(document_id, language)`, so the same document only gets translated
-   once no matter how many people view it.
-7. Chat retrieves the top-5 most relevant chunks via vector similarity and
-   asks the model to answer strictly from that context — no hallucinated
-   eligibility rules.
+6. Switching language calls `/documents/:id/translate`, cached per
+   `(document_id, language)`.
+7. Chat retrieves the top-5 relevant chunks and asks the LLM to answer
+   only from that context.
 
 ---
 
-## 🧭 Deliberate trade-offs (and how to graduate past them)
+## 🧭 Deliberate trade-offs
 
 | Today | Production upgrade path |
 |---|---|
-| LLM: Groq free tier (open-weight models) | Swap `fastapi-service/app/llm_client.py` for Claude/GPT if you need stronger instruction-following |
-| Embeddings: hashed bag-of-words (zero-dependency, runs free) | Swap `embed.py` for OpenAI/Voyage embeddings — meaningfully better retrieval |
-| File storage: local disk | Swap the `multer` config in `documents.js` for S3 presigned URLs |
-| Auth: email + password only | Add Google OAuth / phone OTP |
-| Voice (STT/TTS) | Not built yet — natural Phase 3 |
-| PWA: manifest is in place | Add `next-pwa` for real offline support |
+| LLM: Groq free tier | Swap `fastapi-service/app/llm_client.py` for Claude/GPT |
+| Embeddings: hashed bag-of-words | Swap `embed.py` for OpenAI/Voyage embeddings |
+| File storage: local disk | Swap `multer` config in `documents.js` for S3 presigned URLs |
+| Auth: email/password only | Add Google OAuth / phone OTP |
+| Voice (STT/TTS) | Not implemented — Phase 3 |
+| PWA offline caching | manifest.json is in place; add `next-pwa` for a service worker |
+
+See `PROJECT_DEEP_DIVE.md` for the full reasoning behind every choice above.
 
 ---
 
-## 🔒 Before you actually deploy this anywhere
+## 🔒 Before you deploy this anywhere
 
 - Rotate `JWT_SECRET` and `INTERNAL_SERVICE_TOKEN` — never reuse dev values
-- Keep `ai-service` off the public internet entirely — it should only be
-  reachable from `node-api`
-- Add malware scanning and PII redaction (Aadhaar/PAN patterns) on upload
-  before any document text reaches the LLM
-- If you ever paste an API key into a chat, a doc, or a commit by
-  accident — rotate it. Assume it's burned.
+- Keep `ai-service` off the public internet — only `node-api` should reach it
+- Add malware scanning + PII redaction (Aadhaar/PAN) before sending document text to the LLM
+- If an API key or token is ever pasted somewhere public by accident — rotate it immediately
 
 ---
 

@@ -1,0 +1,53 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: theme("colors.paper.DEFAULT");
+  color: theme("colors.ink.DEFAULT");
+  background-image:
+    radial-gradient(60rem 60rem at 110% -10%, theme("colors.teal.wash"), transparent 55%),
+    radial-gradient(48rem 48rem at -10% 0%, theme("colors.amber.wash"), transparent 45%);
+  background-attachment: fixed;
+}
+
+:focus-visible {
+  outline: 3px solid theme("colors.amber.DEFAULT");
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+@layer components {
+  .card {
+    @apply rounded-card border border-line bg-paper-raised shadow-card;
+  }
+  .input {
+    @apply w-full rounded-xl border border-line bg-paper-raised px-4 py-2.5 text-[15px]
+      text-ink outline-none transition focus:border-teal focus:ring-4 focus:ring-teal-wash;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-pill px-5 py-2.5 text-sm
+      font-semibold transition disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply btn bg-teal text-white hover:bg-teal-dark active:translate-y-px;
+  }
+  .btn-ghost {
+    @apply btn border border-line bg-paper-raised text-ink hover:bg-paper-sunk;
+  }
+  .label {
+    @apply mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

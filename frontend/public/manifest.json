@@ -1,0 +1,10 @@
+{
+  "name": "Parchi — government paperwork, in plain language",
+  "short_name": "Parchi",
+  "description": "Upload a government notice, form or letter and get a plain-language summary, an eligibility checklist, key dates and answers to your questions.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#FBF8F2",
+  "theme_color": "#0F5257",
+  "icons": []
+}

@@ -11,69 +11,58 @@ services:
     volumes:
       - pg_data:/var/lib/postgresql/data
       - ./database/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bureaucracy -d bureaucracy"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
-  redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-    ports:
-      - "6379:6379"
-
-  ai-service:
-    build: ./fastapi-service
+  api:
+    build: ./backend
     restart: unless-stopped
     env_file:
-      - ./fastapi-service/.env
+      - ./backend/.env
     environment:
       DATABASE_URL: postgresql://bureaucracy:bureaucracy@postgres:5432/bureaucracy
+      UPLOAD_DIR: /data/uploads
+      CORS_ORIGINS: http://localhost:3000
     ports:
       - "8000:8000"
     volumes:
       - uploads:/data/uploads
     depends_on:
-      - postgres
-
-  api:
-    build: ./node-api
-    restart: unless-stopped
-    env_file:
-      - ./node-api/.env
-    environment:
-      DATABASE_URL: postgresql://bureaucracy:bureaucracy@postgres:5432/bureaucracy
-      REDIS_URL: redis://redis:6379
-      AI_SERVICE_URL: http://ai-service:8000
-      UPLOAD_DIR: /data/uploads
-    ports:
-      - "4000:4000"
-    volumes:
-      - uploads:/data/uploads
-    depends_on:
-      - postgres
-      - redis
-      - ai-service
+      postgres:
+        condition: service_healthy
 
   worker:
-    build: ./node-api
+    build: ./backend
     restart: unless-stopped
-    command: ["node", "src/worker.js"]
+    command: ["python", "-m", "app.worker"]
+    # The image's HTTP healthcheck is for the API; the worker has no server.
+    healthcheck:
+      disable: true
     env_file:
-      - ./node-api/.env
+      - ./backend/.env
     environment:
       DATABASE_URL: postgresql://bureaucracy:bureaucracy@postgres:5432/bureaucracy
-      REDIS_URL: redis://redis:6379
-      AI_SERVICE_URL: http://ai-service:8000
       UPLOAD_DIR: /data/uploads
     volumes:
       - uploads:/data/uploads
     depends_on:
-      - postgres
-      - redis
-      - ai-service
+      postgres:
+        condition: service_healthy
+      api:
+        condition: service_started
 
   web:
-    build: ./web
+    build:
+      context: ./frontend
+      # NEXT_PUBLIC_* is inlined into the client bundle at build time. The
+      # browser talks to the API on the host, so these are localhost URLs.
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+        NEXT_PUBLIC_WS_URL: ws://localhost:8000
     restart: unless-stopped
-    environment:
-      NEXT_PUBLIC_API_URL: http://localhost:4000
     ports:
       - "3000:3000"
     depends_on:

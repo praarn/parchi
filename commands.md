@@ -82,13 +82,13 @@ npm run dev                           # http://localhost:3000
 
 ```bash
 # psql shell
-docker exec -it bureaucracysimplifier-postgres-1 psql -U bureaucracy -d bureaucracy
+docker compose exec postgres psql -U bureaucracy -d bureaucracy
 
 # re-apply schema to an existing volume (safe: everything is IF NOT EXISTS)
-docker exec -i bureaucracysimplifier-postgres-1 psql -U bureaucracy -d bureaucracy < database/schema.sql
+docker compose exec -T postgres psql -U bureaucracy -d bureaucracy < database/schema.sql
 
 # wipe just the documents/queue data (keeps users)
-docker exec -it bureaucracysimplifier-postgres-1 psql -U bureaucracy -d bureaucracy \
+docker compose exec postgres psql -U bureaucracy -d bureaucracy \
   -c "TRUNCATE documents, jobs RESTART IDENTITY CASCADE;"
 ```
 

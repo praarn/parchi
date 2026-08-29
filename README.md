@@ -66,8 +66,9 @@ docker compose up --build
 Then sign up, upload `samples/sample-notice.pdf`, and watch the pipeline run live.
 
 Full command reference — local dev per service, tests, lint, database, CI — is in
-[`commands.md`](./commands.md). Architecture reasoning is in
-[`PROJECT_DEEP_DIVE.md`](./PROJECT_DEEP_DIVE.md).
+[`commands.md`](./commands.md). The full implementation write-up — process model,
+data model, every pipeline stage, auth, live progress, trade-offs — is in
+[`IMPLEMENTATION.md`](./IMPLEMENTATION.md).
 
 ## Notes before deploying anywhere
 
